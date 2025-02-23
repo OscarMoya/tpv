@@ -1,0 +1,61 @@
+version: "3.8"
+
+networks:
+  tpv-network:
+    driver: bridge
+
+services:
+  kratos-migrate:
+    image: oryd/kratos:v1.0.0
+    command: migrate sql -e --yes
+    depends_on:
+      - postgres
+    environment:
+      - DSN=postgres://kratos:secret@postgres:5432/kratos?sslmode=disable
+    networks:
+      - tpv-network
+
+  kratos:
+    image: oryd/kratos:v1.0.0
+    depends_on:
+      - kratos-migrate
+    ports:
+      - "4433:4433"  # API pública (self-service)
+      - "4434:4434"  # API administrativa
+    volumes:
+      - ./config/kratos.yaml:/etc/config/kratos.yml
+      - ./config/identity.schema.json:/etc/config/identity.schema.json
+    environment:
+      - DSN=postgres://kratos:secret@postgres:5432/kratos?sslmode=disable
+    command: serve -c /etc/config/kratos.yml --dev
+    networks:
+      - tpv-network
+
+  kratos-selfservice-ui:
+    image: oryd/kratos-selfservice-ui-node:v1.0.0
+    depends_on:
+      - kratos
+    ports:
+      - "4455:3000"
+    environment:
+      - KRATOS_PUBLIC_URL=http://kratos:4433/
+      - KRATOS_ADMIN_URL=http://kratos:4434/
+    networks:
+      - tpv-network
+
+  postgres:
+    image: postgres:13
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: kratos
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: kratos
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - tpv-network
+
+volumes:
+  postgres-data:
